@@ -1,20 +1,37 @@
 const blogRouter = require('express').Router()
 const Blog = require('../models/blog')
+const middleware = require('../utils/middleware')
 
 blogRouter.get('/', async (request, response) => {
-  const blogs = await Blog.find({})
+  const blogs = await Blog.find({}).populate('user', { username: 1, name: 1 })
   response.json(blogs)
 })
 
-blogRouter.post('/', async (request, response) => {
-  const blog = new Blog(request.body)
+blogRouter.post('/', middleware.userExtractor, async (request, response) => {
+  const body = request.body
+  const user = request.user
+
+  const blog = new Blog({ ...body, user: user.id })
   const result = await blog.save()
+
+  user.blogs = user.blogs.concat(result._id)
+  await user.save()
+
   response.status(201).json(result)
 })
 
-blogRouter.delete('/:id', async (request, response) => {
-  await Blog.findByIdAndDelete(request.params.id)
-  response.status(204).end()
+blogRouter.delete('/:id', middleware.userExtractor, async (request, response) => {
+  const idBlog = request.params.id
+  const user = request.user
+
+  const blog = await Blog.findById(idBlog)
+
+  if (blog.user.toString() === user.id.toString()) {
+    await Blog.findByIdAndDelete(idBlog)
+    response.status(204).end()
+  } else {
+    return response.status(401).json({ error: 'You do not have permission for this operation' })
+  }
 })
 
 blogRouter.put('/:id', async (request, response) => {
